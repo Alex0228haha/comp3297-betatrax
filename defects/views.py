@@ -1,11 +1,9 @@
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.core.mail import send_mail
 from django.shortcuts import render, get_object_or_404
-from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
-from django.contrib.auth.decorators import login_required
 import json
 
 from .models import DefectReport, Developer, Product
@@ -47,8 +45,8 @@ def submit_defect(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@login_required
-@require_http_methods(["GET"])
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def list_open_defects(request):
     """
     List all open defects (status='Open') available for the developer to take responsibility for.
@@ -58,9 +56,9 @@ def list_open_defects(request):
         # Get the developer associated with the logged-in user
         developer = Developer.objects.get(user=request.user)
     except Developer.DoesNotExist:
-        return JsonResponse(
+        return Response(
             {'error': 'User is not a registered developer'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     # Get all open defects for the developer's product
@@ -69,15 +67,15 @@ def list_open_defects(request):
         status='Open'
     ).values('id', 'title', 'description', 'severity', 'priority', 'created_at')
 
-    return JsonResponse({
+    return Response({
         'product': developer.product.name,
         'open_defects': list(open_defects),
         'count': open_defects.count()
     })
 
 
-@login_required
-@require_http_methods(["POST"])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def take_responsibility(request, defect_id):
     """
     Developer takes responsibility for a defect.
@@ -86,9 +84,9 @@ def take_responsibility(request, defect_id):
     try:
         developer = Developer.objects.get(user=request.user)
     except Developer.DoesNotExist:
-        return JsonResponse(
+        return Response(
             {'error': 'User is not a registered developer'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     # Get the defect report
@@ -96,16 +94,16 @@ def take_responsibility(request, defect_id):
 
     # Verify the defect belongs to the developer's product
     if defect.product != developer.product:
-        return JsonResponse(
+        return Response(
             {'error': 'Defect does not belong to your product'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     # Verify the defect status is 'Open'
     if defect.status != 'Open':
-        return JsonResponse(
+        return Response(
             {'error': f'Defect status must be Open, currently {defect.status}'},
-            status=400
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     # Update the defect status and assign to developer
@@ -113,7 +111,7 @@ def take_responsibility(request, defect_id):
     defect.assigned_developer = developer
     defect.save()
 
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': f'You have taken responsibility for defect {defect_id}',
         'defect': {
@@ -125,8 +123,8 @@ def take_responsibility(request, defect_id):
     })
 
 
-@login_required
-@require_http_methods(["GET"])
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def view_defect_detail(request, defect_id):
     """
     View details of a specific defect report.
@@ -135,21 +133,21 @@ def view_defect_detail(request, defect_id):
     try:
         developer = Developer.objects.get(user=request.user)
     except Developer.DoesNotExist:
-        return JsonResponse(
+        return Response(
             {'error': 'You are not a registered developer'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     defect = get_object_or_404(DefectReport, id=defect_id)
 
     # Verify access: developer can view defects from their product
     if defect.product != developer.product:
-        return JsonResponse(
+        return Response(
             {'error': 'You do not have access to this defect'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
-    return JsonResponse({
+    return Response({
         'id': defect.id,
         'title': defect.title,
         'description': defect.description,
@@ -166,8 +164,8 @@ def view_defect_detail(request, defect_id):
     })
 
 
-@login_required
-@require_http_methods(["POST"])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def mark_as_fixed(request, defect_id):
     """
     Developer marks a defect as Fixed.
@@ -176,32 +174,32 @@ def mark_as_fixed(request, defect_id):
     try:
         developer = Developer.objects.get(user=request.user)
     except Developer.DoesNotExist:
-        return JsonResponse(
+        return Response(
             {'error': 'You are not a registered developer'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     defect = get_object_or_404(DefectReport, id=defect_id)
 
     # Verify the defect is assigned to this developer
     if defect.assigned_developer != developer:
-        return JsonResponse(
+        return Response(
             {'error': 'Defect is not assigned to you'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     # Verify the defect status is 'Assigned'
     if defect.status != 'Assigned':
-        return JsonResponse(
+        return Response(
             {'error': f'Defect status must be Assigned, currently {defect.status}'},
-            status=400
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     # Update the defect status to 'Fixed'
     defect.status = 'Fixed'
     defect.save()
 
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': f'Defect {defect_id} marked as Fixed',
         'defect': {
@@ -212,8 +210,8 @@ def mark_as_fixed(request, defect_id):
     })
 
 
-@login_required
-@require_http_methods(["POST"])
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def mark_as_cannot_reproduce(request, defect_id):
     """
     Developer marks a defect as Cannot Reproduce.
@@ -222,32 +220,32 @@ def mark_as_cannot_reproduce(request, defect_id):
     try:
         developer = Developer.objects.get(user=request.user)
     except Developer.DoesNotExist:
-        return JsonResponse(
+        return Response(
             {'error': 'You are not a registered developer'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     defect = get_object_or_404(DefectReport, id=defect_id)
 
     # Verify the defect is assigned to this developer
     if defect.assigned_developer != developer:
-        return JsonResponse(
+        return Response(
             {'error': 'Defect is not assigned to you'},
-            status=403
+            status=status.HTTP_403_FORBIDDEN
         )
 
     # Verify the defect status is 'Assigned'
     if defect.status != 'Assigned':
-        return JsonResponse(
+        return Response(
             {'error': f'Defect status must be Assigned, currently {defect.status}'},
-            status=400
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     # Update the defect status to 'Cannot Reproduce'
     defect.status = 'Cannot Reproduce'
     defect.save()
 
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': f'Defect {defect_id} marked as Cannot Reproduce',
         'defect': {
