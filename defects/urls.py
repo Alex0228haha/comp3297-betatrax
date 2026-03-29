@@ -16,9 +16,9 @@ urlpatterns = [
     path('api/defects/<int:pk>/resolve/', views.resolve_defect, name='resolve-defect'),
     # API endpoints for Product Owner functions
     # View list of New defects
-    path('po/defects/new/', po_views.PO_NewDefectList.as_view()),
+    path('api/po/defects/new/', po_views.PO_NewDefectList.as_view()),
     # View single defect details
-    path('po/defect/detail/', po_views.PO_DefectDetail.as_view()),
+    path('api/po/defect/detail/', po_views.PO_DefectDetail.as_view()),
     # Approve defect and set severity/priority
-    path('po/defect/approve/', po_views.PO_ApproveDefect.as_view()),
+    path('api/po/defect/approve/', po_views.PO_ApproveDefect.as_view()),
 ]
