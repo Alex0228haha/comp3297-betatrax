@@ -24,6 +24,26 @@ class PO_NewDefectList(APIView):
 
         return Response(data)
 
+class PO_DefectList(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        po_service = ProductOwnerService(request.user)
+        if not po_service.product:
+            return Response({"error": "User is not a Product Owner"}, status=403)
+
+        defects = po_service.get_defect_list()
+
+        data = [{
+            "report_id": d.id,
+            "title": d.title,
+            "tester_id": d.tester_id,
+            "submitted_at": d.created_at,
+            "status": d.status
+        } for d in defects]
+
+        return Response(data)
+
 # API: Get full details of one defect report
 class PO_DefectDetail(APIView):
     permission_classes = [IsAuthenticated]

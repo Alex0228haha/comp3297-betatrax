@@ -20,6 +20,13 @@ class ProductOwnerService:
             status='New'
         ).order_by('-created_at')
 
+    def get_defect_list(self):
+        if not self.product:
+            return []
+        return DefectReport.objects.filter(
+            product=self.product,
+        ).order_by('-created_at')
+
     # 2. Obtain detailed information of a single defect
     def get_defect_detail(self, report_id):
         if not self.product:

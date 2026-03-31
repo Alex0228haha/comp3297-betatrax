@@ -44,6 +44,29 @@ def submit_defect(request):
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_defects(request):
+    try:
+        # Get the developer associated with the logged-in user
+        developer = Developer.objects.get(user=request.user)
+    except Developer.DoesNotExist:
+        return Response(
+            {'error': 'User is not a registered developer'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Get all open defects for the developer's product
+    defects = DefectReport.objects.filter(
+        product=developer.product,
+    ).values('id', 'title', 'description', 'severity', 'priority', 'created_at')
+
+    return Response({
+        'product': developer.product.name,
+        'defects': list(defects),
+        'count': defects.count()
+    })
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
