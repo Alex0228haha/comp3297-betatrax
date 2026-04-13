@@ -27,8 +27,11 @@ python manage.py runserver
 - [x] PO reject defect
 - [x] PO mark defect as Duplicate
 - [x] Reopen defect flow
+- [x] Comments on defects
+- [x] Product Registration by Product Owner
+- [x] User Authentication
 
 ## Not Implemented
-- [ ] Comments on defects
-- [ ] Product Registration by Product Owner
+- [ ] Defect report validation
+- [ ] Version field on defect report
 - [ ] User Authentication
