@@ -30,3 +30,5 @@ python manage.py runserver
 
 ## Not Implemented
 - [ ] Comments on defects
+- [ ] Product Registration by Product Owner
+- [ ] User Authentication
