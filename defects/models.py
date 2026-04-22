@@ -24,6 +24,8 @@ class Employee(models.Model):
         on_delete=models.CASCADE,
         related_name='employees'
     )
+    defects_fixed_count = models.PositiveIntegerField(default=0)
+    defects_reopened_count = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"{self.user.username} ({self.role})"

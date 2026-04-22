@@ -6,6 +6,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .metrics import classify_effectiveness
 from .models import DefectReport, Employee, Comment, Product
 from .serializers import DefectReportSerializer, CommentSerializer, ProductSerializer
 
@@ -86,7 +87,6 @@ def send_status_change_notifications(defect, old_status, new_status):
 
 @api_view(['GET', 'POST'])
 def defect_list(request):
-    """Submit defects or list defects for the authenticated user's product."""
     if request.method == 'POST':
         serializer = DefectReportSerializer(data=request.data)
         if serializer.is_valid():
@@ -98,10 +98,24 @@ def defect_list(request):
     if error_response:
         return error_response
 
-    status_filter = request.query_params.get('status')
     defects = DefectReport.objects.filter(product=employee.product)
+
+    status_filter = request.query_params.get('status')
+    severity_filter = request.query_params.get('severity')
+    priority_filter = request.query_params.get('priority')
+    assigned_to_filter = request.query_params.get('assigned_to')
+    tester_id_filter = request.query_params.get('tester_id')
+
     if status_filter:
         defects = defects.filter(status=status_filter)
+    if severity_filter:
+        defects = defects.filter(severity=severity_filter)
+    if priority_filter:
+        defects = defects.filter(priority=priority_filter)
+    if assigned_to_filter:
+        defects = defects.filter(assigned_developer_id=assigned_to_filter)
+    if tester_id_filter:
+        defects = defects.filter(tester_id=tester_id_filter)
 
     if employee.role == 'Developer':
         defects = defects.values('id', 'title', 'description', 'severity', 'priority', 'created_at')
@@ -226,6 +240,9 @@ def mark_as_fixed(request, defect_id):
 
     defect.status = 'Fixed'
     defect.save()
+
+    employee.defects_fixed_count += 1
+    employee.save()
 
     send_status_change_notifications(defect, 'Assigned', 'Fixed')
 
@@ -436,6 +453,11 @@ def reopen_defect(request, defect_id):
     if not reopen_reason or not str(reopen_reason).strip():
         return Response({'error': 'Reopen reason is required'}, status=status.HTTP_400_BAD_REQUEST)
 
+    # increment before clearing — once assigned_developer is None we lose the reference
+    if defect.assigned_developer:
+        defect.assigned_developer.defects_reopened_count += 1
+        defect.assigned_developer.save()
+
     defect.status = 'Reopened'
     defect.reopen_reason = str(reopen_reason).strip()
     defect.reopened_by = request.user
@@ -458,12 +480,10 @@ def reopen_defect(request, defect_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def resolve_defect(request, defect_id=None, pk=None):
+def resolve_defect(request, defect_id):
     po, error_response = _get_employee(request, role='ProductOwner')
     if error_response:
         return error_response
-
-    defect_id = defect_id if defect_id is not None else pk
 
     try:
         defect = DefectReport.objects.get(id=defect_id, product=po.product, status='Fixed')
@@ -483,115 +503,6 @@ def resolve_defect(request, defect_id=None, pk=None):
     })
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def list_open_defects(request):
-    employee, error_response = _get_employee(request, role='Developer')
-    if error_response:
-        return error_response
-
-    open_defects = DefectReport.objects.filter(product=employee.product, status='Open').values(
-        'id', 'title', 'description', 'severity', 'priority', 'created_at'
-    )
-
-    return Response({
-        'product': employee.product.name,
-        'open_defects': list(open_defects),
-        'count': open_defects.count()
-    })
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def list_defects(request):
-    employee, error_response = _get_employee(request)
-    if error_response:
-        return error_response
-
-    defects = DefectReport.objects.filter(product=employee.product).values(
-        'id', 'title', 'description', 'severity', 'priority', 'created_at'
-    )
-    return Response({
-        'product': employee.product.name,
-        'defects': list(defects),
-        'count': defects.count()
-    })
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def view_defect_detail(request, defect_id):
-    return _defect_detail_response(request, defect_id)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def po_new_defect_list(request):
-    po, error_response = _get_employee(request, role='ProductOwner')
-    if error_response:
-        return error_response
-
-    defects = DefectReport.objects.filter(product=po.product, status='New').order_by('-created_at')
-    return Response([
-        {
-            'report_id': defect.id,
-            'title': defect.title,
-            'tester_id': defect.tester_id,
-            'submitted_at': defect.created_at,
-            'status': defect.status
-        }
-        for defect in defects
-    ])
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def po_defect_list(request):
-    po, error_response = _get_employee(request, role='ProductOwner')
-    if error_response:
-        return error_response
-
-    defects = DefectReport.objects.filter(product=po.product).order_by('-created_at')
-    return Response([
-        {
-            'report_id': defect.id,
-            'title': defect.title,
-            'tester_id': defect.tester_id,
-            'submitted_at': defect.created_at,
-            'status': defect.status
-        }
-        for defect in defects
-    ])
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def po_defect_detail(request, defect_id):
-    po, error_response = _get_employee(request, role='ProductOwner')
-    if error_response:
-        return error_response
-
-    defect = get_object_or_404(DefectReport, id=defect_id, product=po.product)
-    return Response({
-        'report_id': defect.id,
-        'product': defect.product.name,
-        'title': defect.title,
-        'description': defect.description,
-        'reproduction_steps': defect.steps_to_reproduce,
-        'tester_id': defect.tester_id,
-        'tester_email': defect.tester_email,
-        'status': defect.status,
-        'duplicate_of_report_id': defect.duplicate_of.id if defect.duplicate_of else None,
-        'rejection_reason': defect.rejection_reason,
-        'rejected_at': defect.rejected_at,
-        'reopen_reason': defect.reopen_reason,
-        'reopened_at': defect.reopened_at,
-        'reopened_by': defect.reopened_by.username if defect.reopened_by else None,
-        'cannot_reproduce_reason': defect.cannot_reproduce_reason,
-        'submitted_at': defect.created_at
-    })
-
-
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def defect_comments(request, defect_id):
@@ -599,7 +510,6 @@ def defect_comments(request, defect_id):
     if error_response:
         return error_response
 
-    # Verify the defect exists and belongs to the user's product
     defect = get_object_or_404(DefectReport, id=defect_id, product=employee.product)
 
     if request.method == 'GET':
@@ -607,24 +517,19 @@ def defect_comments(request, defect_id):
         serializer = CommentSerializer(comments, many=True)
         return Response(serializer.data)
 
-    elif request.method == 'POST':
-        serializer = CommentSerializer(data=request.data)
-        if serializer.is_valid():
-            # Auto-set the defect and the author (the currently logged-in user)
-            serializer.save(defect_report=defect, author=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    serializer = CommentSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(defect_report=defect, author=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_product(request):
-# Enforce that only a ProductOwner can create a product
     po, error_response = _get_employee(request, role='ProductOwner')
     if error_response:
-        return error_response    
-    # Note: Depending on your exact Employee model logic, you may want to enforce
-    # role='ProductOwner' here. However, standard DRF creation looks like this:
+        return error_response
     serializer = ProductSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
@@ -635,7 +540,25 @@ def create_product(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    """Task 6: Logout endpoint"""
     if hasattr(request.user, 'auth_token'):
         request.user.auth_token.delete()
     return Response({'message': 'Successfully logged out.'}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def developer_effectiveness(request, employee_id):
+    requester, error_response = _get_employee(request)
+    if error_response:
+        return error_response
+
+    developer = get_object_or_404(Employee, id=employee_id, product=requester.product, role='Developer')
+
+    classification = classify_effectiveness(developer.defects_fixed_count, developer.defects_reopened_count)
+    return Response({
+        'employee_id': developer.id,
+        'username': developer.user.username,
+        'defects_fixed': developer.defects_fixed_count,
+        'defects_reopened': developer.defects_reopened_count,
+        'classification': classification,
+    })
